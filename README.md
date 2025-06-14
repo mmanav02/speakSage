@@ -5,7 +5,7 @@ Interact with Microsoft Excel using natural‑language prompts powered by Anthr
 
 ---
 
-## ✨ Features
+## Features
 
 | Natural‑language prompt | What speakExcel does |
 |------------------------|----------------------|
@@ -15,7 +15,7 @@ Interact with Microsoft Excel using natural‑language prompts powered by Anthr
 
 ---
 
-## 🖥️ Local development stack
+## Local development stack
 
 | Layer | Tech |
 |-------|------|
@@ -35,7 +35,7 @@ Interact with Microsoft Excel using natural‑language prompts powered by Anthr
 
 ---
 
-## 🚀 Quick start
+## Quick start
 
 ```bash
 git clone https://github.com/yourname/speakExcel.git
