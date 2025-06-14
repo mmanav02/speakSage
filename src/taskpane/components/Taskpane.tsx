@@ -1,6 +1,7 @@
 import * as React from "react";
 import axios from "axios";
 
+
 export const Taskpane: React.FC = () => {
   const [apiKey, setApiKey] = React.useState("");
   const [prompt, setPrompt] = React.useState("");
@@ -11,43 +12,37 @@ export const Taskpane: React.FC = () => {
     setLoading(true);
     setOutput("");
 
-    const systemPrompt = `
-You are an assistant that helps edit Excel spreadsheets using the Office.js API.
-Always respond with a complete and correct JavaScript snippet that uses:
-  await Excel.run(async (context) => { ... });
-Do NOT explain anything. Do NOT include Markdown or backticks.
-Only return executable JavaScript code.`;
-
     try {
-      const response = await axios.post(
-        "https://api.anthropic.com/v1/messages",
-        {
-          model: "claude-3-opus-20240229",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: prompt }
-          ],
-          max_tokens: 400
-        },
-        {
-          headers: {
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-            "Content-Type": "application/json"
-          }
-        }
+      const systemPrompt = `You are an assistant that edits Excel spreadsheets using the Office.js API. Always return only the executable JavaScript code wrapped in:
+await Excel.run(async (context) => { ... });`;
+      console.log(apiKey);
+      // call your local proxy
+      const response = await axios.post("https://127.0.0.1:5050/anthropic", {
+        apiKey,
+        prompt,
+        systemPrompt,
+      });
+
+      const reply = response.data?.content?.[0]?.text ?? "";
+      setOutput(reply);                      // show raw Claude text
+
+      // ② Strip ``` fences if any
+      const clean = reply.replace(/```[a-z]*|```/g, "").trim();
+
+      // ③ Wrap inside an async IIFE so leading “await” is valid JS
+      const wrapped = new Function(
+        "Excel",
+        `"use strict";
+         return (async () => {
+           ${clean}
+         })();`
       );
 
-      const responseText = response.data?.content?.[0]?.text ?? "";
-      setOutput(responseText);
-
-      const cleanCode = responseText.replace(/```[a-z]*|```/g, "").trim();
-
-      const dynamicFn = new Function("Excel", `"use strict"; return (${cleanCode})`);
-      await Excel.run(dynamicFn as (context: Excel.RequestContext) => Promise<unknown>);
+      // ④ Execute
+      await wrapped(Excel as any);
     } catch (error: any) {
       console.error("Execution error:", error);
-      setOutput(`❌ Error: ${error.message}`);
+      setOutput(`❌ Error: ${error?.response?.data?.error || error.message}`);
     } finally {
       setLoading(false);
     }
@@ -86,7 +81,7 @@ Only return executable JavaScript code.`;
         <button
           onClick={callAnthropic}
           style={styles.button}
-          disabled={loading || !apiKey.trim()}
+          disabled={loading || !apiKey.trim() || !prompt.trim()}
         >
           {loading ? "Running..." : "Run"}
         </button>

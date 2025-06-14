@@ -9,7 +9,7 @@
   "config": {
     "app_to_debug": "excel",
     "app_type_to_debug": "desktop",
-    "dev_server_port": 3000
+    "dev_server_port": 3030
   },
   "scripts": {
     "build": "webpack --mode production",
@@ -30,7 +30,9 @@
     "@fluentui/react-icons": "^2.0.264",
     "axios": "^1.9.0",
     "core-js": "^3.36.0",
+    "cors": "^2.8.5",
     "es6-promise": "^4.2.8",
+    "express": "^5.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "regenerator-runtime": "^0.14.1"
