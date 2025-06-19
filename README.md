@@ -5,7 +5,7 @@ Interact with Microsoft Excel using natural‑language prompts powered by Anthr
 
 ---
 
-## Features
+## Features
 
 | Natural‑language prompt | What speakSage does |
 |------------------------|----------------------|
@@ -15,7 +15,7 @@ Interact with Microsoft Excel using natural‑language prompts powered by Anthr
 
 ---
 
-## Local development stack
+## Local development stack
 
 | Layer | Tech |
 |-------|------|
