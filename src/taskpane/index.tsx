@@ -10,6 +10,7 @@ const root = rootElement ? createRoot(rootElement) : undefined;
 
 /* Render application after Office initializes */
 Office.onReady(() => {
+  createRoot(document.getElementById("container")!).render(<Taskpane />);
   root?.render(
     <FluentProvider theme={webLightTheme}>
       <Taskpane />

@@ -1,5 +1,5 @@
 
-# speakExcel
+# speakSage
 
 Interact with Microsoft Excel using natural‑language prompts powered by Anthropic Claude.
 
@@ -7,7 +7,7 @@ Interact with Microsoft Excel using natural‑language prompts powered by Anthr
 
 ## Features
 
-| Natural‑language prompt | What speakExcel does |
+| Natural‑language prompt | What speakSage does |
 |------------------------|----------------------|
 | **“Bold the first row.”** | Executes `Excel.run` to bold row 1 |
 | **“Colour cells A1:D1 yellow and centre the text.”** | Claude returns Office JS code → add‑in runs it |
@@ -38,8 +38,8 @@ Interact with Microsoft Excel using natural‑language prompts powered by Anthr
 ## Quick start
 
 ```bash
-git clone https://github.com/yourname/speakExcel.git
-cd speakExcel
+git clone https://github.com/mmanav02/speakSage.git
+cd speakSage
 npm install
 ```
 
@@ -67,7 +67,7 @@ Upload **manifest.xml** via *Home ▸ Add‑ins ▸ Upload My Add‑in*.
 
 ---
 
-## Using speakExcel
+## Using speakSage
 
 1. Open task pane → paste API key  
 2. Enter prompt → **Run**  

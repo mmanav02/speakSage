@@ -1,170 +1,197 @@
 import * as React from "react";
-import axios from "axios";
-
+import { useAnthropic } from "../hooks/callLLM";   // keep the hook file
 
 export const Taskpane: React.FC = () => {
   const [apiKey, setApiKey] = React.useState("");
   const [prompt, setPrompt] = React.useState("");
-  const [output, setOutput] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
+  const [files,  setFiles]  = React.useState<File[]>([]);
 
-  const callAnthropic = async () => {
-    setLoading(true);
-    setOutput("");
+  const { loading, output, call, encodeImages } = useAnthropic();
 
-    try {
-      const systemPrompt = `You are an assistant that edits Excel spreadsheets using the Office.js API. Always return only the executable JavaScript code wrapped in:
-await Excel.run(async (context) => { ... });`;
-      console.log(apiKey);
-      // call your local proxy
-      const response = await axios.post("https://127.0.0.1:5050/anthropic", {
-        apiKey,
-        prompt,
-        systemPrompt,
-      });
-
-      const reply = response.data?.content?.[0]?.text ?? "";
-      setOutput(reply);                      // show raw Claude text
-
-      // ② Strip ``` fences if any
-      const clean = reply.replace(/```[a-z]*|```/g, "").trim();
-
-      // ③ Wrap inside an async IIFE so leading “await” is valid JS
-      const wrapped = new Function(
-        "Excel",
-        `"use strict";
-         return (async () => {
-           ${clean}
-         })();`
-      );
-
-      // ④ Execute
-      await wrapped(Excel as any);
-    } catch (error: any) {
-      console.error("Execution error:", error);
-      setOutput(`❌ Error: ${error?.response?.data?.error || error.message}`);
-    } finally {
-      setLoading(false);
-    }
+  const run = async () => {
+    const images = await encodeImages(files);
+    await call({ apiKey, prompt, images });
   };
 
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        <div style={styles.header}>
-          <span style={styles.logo}>🧠</span>
-          <h1 style={styles.title}>speakExcel</h1>
-        </div>
+        <Header />
 
-        <div style={styles.section}>
-          <label style={styles.label}>Anthropic API Key</label>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="sk-ant-..."
-            style={styles.input}
-          />
-        </div>
+        <Field
+          label="Anthropic API Key"
+          value={apiKey}
+          onChange={setApiKey}
+          type="password"
+          placeholder="sk-ant-…"
+        />
 
-        <div style={styles.section}>
-          <label style={styles.label}>Prompt</label>
-          <input
-            type="text"
+        <Field label="Prompt">
+          <textarea
+            style={styles.textareaPrompt}
+            placeholder='e.g. "Format like the images"'
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder='e.g. "Bold the first row and center it"'
-            style={styles.input}
+            onChange={e => setPrompt(e.target.value)}
           />
-        </div>
+        </Field>
+
+        <Field label="Images">
+          <label style={styles.uploadBtn}>
+            Upload 📎
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={e => setFiles(Array.from(e.target.files ?? []))}
+              hidden
+            />
+          </label>
+          {files.length > 0 && (
+            <span style={styles.uploadInfo}>
+              {files.length} image{files.length > 1 ? "s" : ""}
+            </span>
+          )}
+        </Field>
+
+        {files.length > 0 && (
+          <div style={styles.thumbStrip}>
+            {files.map((f, i) => (
+              <img
+                key={i}
+                src={URL.createObjectURL(f)}
+                alt={f.name}
+                style={styles.thumb}
+              />
+            ))}
+          </div>
+        )}
 
         <button
-          onClick={callAnthropic}
-          style={styles.button}
+          style={styles.runBtn}
+          onClick={run}
           disabled={loading || !apiKey.trim() || !prompt.trim()}
         >
-          {loading ? "Running..." : "Run"}
+          {loading ? "Running…" : "Run"}
         </button>
 
-        <div style={styles.section}>
-          <label style={styles.label}>Claude’s Response (editable JS)</label>
-          <textarea
-            value={output}
-            readOnly
-            rows={6}
-            style={styles.textarea}
-            placeholder="Claude's generated Excel.run() script will appear here..."
-          />
-        </div>
+        <Field label="Claude response (JS)">
+          <textarea readOnly rows={6} value={output} style={styles.textarea} />
+        </Field>
       </div>
     </div>
   );
 };
 
-const styles: { [key: string]: React.CSSProperties } = {
-  container: {
-    padding: "1rem",
-    backgroundColor: "#f3f2f1",
-    height: "100%",
-    boxSizing: "border-box",
-  },
+/* ── presentational helpers ──────────────────────────── */
+
+const Header = () => (
+  <div style={styles.header}>
+    <span style={styles.logo}>🧠</span>
+    <h1 style={styles.title}>SheetSage</h1>
+  </div>
+);
+
+const Field: React.FC<{
+  label: string;
+  children?: React.ReactNode;
+  value?: string;
+  onChange?: (s: string) => void;
+  type?: string;
+  placeholder?: string;
+}> = ({ label, children, value, onChange, type = "text", placeholder }) => (
+  <div style={styles.section}>
+    <label style={styles.label}>{label}</label>
+    {children ?? (
+      <input
+        type={type}
+        value={value}
+        onChange={e => onChange?.(e.target.value)}
+        placeholder={placeholder}
+        style={styles.input}
+      />
+    )}
+  </div>
+);
+
+/* ── inline style object (same values as the CSS) ────────────────────────── */
+
+const styles: { [k: string]: React.CSSProperties } = {
+  container: { padding: "1rem", background: "#f3f2f1", height: "100%" },
   card: {
-    backgroundColor: "#ffffff",
-    borderRadius: "10px",
-    boxShadow: "0 0 8px rgba(0,0,0,0.1)",
-    padding: "20px",
+    background: "#fff",
+    borderRadius: 10,
+    padding: 20,
+    boxShadow: "0 0 8px rgba(0,0,0,.1)",
     fontFamily: "Segoe UI, sans-serif",
   },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    marginBottom: "1rem",
-  },
-  logo: {
-    fontSize: "2rem",
-    marginRight: "10px",
-  },
-  title: {
-    fontSize: "1.5rem",
-    margin: 0,
-    color: "#0078d4",
-  },
-  section: {
-    marginBottom: "1rem",
-  },
-  label: {
-    fontWeight: 600,
-    marginBottom: "0.2rem",
-    display: "block",
-    color: "#323130",
-  },
+  header: { display: "flex", alignItems: "center", marginBottom: 16 },
+  logo: { fontSize: 24, marginRight: 8 },
+  title: { margin: 0, fontSize: "1.5rem", color: "#0078d4" },
+
+  section: { marginBottom: 16 },
+  label: { fontWeight: 600, marginBottom: 4, display: "block" },
+
   input: {
     width: "100%",
-    padding: "10px",
-    fontSize: "14px",
+    padding: 10,
+    fontSize: 14,
     border: "1px solid #ccc",
-    borderRadius: "6px",
+    borderRadius: 6,
     boxSizing: "border-box",
+    resize: "vertical",
+  },
+  textareaPrompt: {
+    width: "100%",
+    minHeight: 120,
+    padding: 10,
+    fontSize: 14,
+    border: "1px solid #ccc",
+    borderRadius: 6,
+    boxSizing: "border-box",
+    resize: "vertical",
   },
   textarea: {
     width: "100%",
-    padding: "10px",
-    fontSize: "14px",
-    backgroundColor: "#f9f9f9",
+    padding: 10,
+    fontSize: 14,
+    background: "#f9f9f9",
     border: "1px solid #ccc",
-    borderRadius: "6px",
+    borderRadius: 6,
+    boxSizing: "border-box",
     resize: "vertical",
   },
-  button: {
+
+  uploadBtn: {
+    padding: "10px 14px",
+    background: "#0078d4",
+    color: "#fff",
+    fontWeight: 600,
+    borderRadius: 6,
+    cursor: "pointer",
+    fontSize: 12,
+    whiteSpace: "nowrap",
+  },
+  uploadInfo: { marginLeft: 8, fontSize: 12 },
+
+  thumbStrip: { display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" },
+  thumb: {
+    width: 48,
+    height: 48,
+    objectFit: "cover",
+    borderRadius: 4,
+    border: "1px solid #ccc",
+  },
+
+  runBtn: {
     width: "100%",
-    padding: "10px",
-    backgroundColor: "#0078d4",
-    color: "white",
-    fontSize: "14px",
+    padding: 10,
+    marginBottom: 16,
+    background: "#28a745",
+    color: "#fff",
     fontWeight: 600,
     border: "none",
-    borderRadius: "6px",
+    borderRadius: 6,
     cursor: "pointer",
-    marginBottom: "1rem",
   },
+  runBtnHover: { background: "#218838" }, // optional hover handling
 };
