@@ -22,7 +22,7 @@ Interact with Microsoft Excel using natural‑language prompts powered by Anthr
 | UI | React + TypeScript task‑pane (Webpack dev‑server) |
 | Excel runtime | Office JS (Excel API 1.13+) |
 | Claude proxy | Express HTTPS server on `https://127.0.0.1:5050` |
-| Dev server | HTTPS Webpack on `https://localhost:3030` |
+| Dev server | HTTPS Webpack on `https://localhost:3000` |
 
 ---
 
@@ -52,7 +52,7 @@ npx office-addin-dev-certs install
 ### 2 — Start dev server + sideload
 
 ```bash
-npm run dev-server       # HTTPS on 3030 & sideloads into Excel (desktop)
+npm run dev-server       # HTTPS on 3000 & sideloads into Excel (desktop)
 ```
 
 ### 3 — Start Claude proxy

@@ -78,7 +78,6 @@ function extractExecutableCode(raw) {
       /* attach for client if wanted */
       r.data.sanitisedCode = ok ? code : null;
       r.data.sanitiseError = ok ? null : err;
-      console.log("✅ Anthropic reply:", r.data);
       res.json(r.data);
     } catch (err) {
       const status  = err.response?.status || 500;

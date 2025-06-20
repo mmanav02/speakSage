@@ -1,18 +1,114 @@
 import * as React from "react";
-import { useAnthropic } from "../hooks/callLLM";   // keep the hook file
+import axios from "axios";
+
+/* ── helper: strip ``` fences & check braces ───────────────── */
+const extractExecutableCode = (
+  raw: string,
+): { ok: boolean; code: string; err?: string } => {
+  const match   = raw.match(/```(?:typescript|javascript)?\s*([\s\S]*?)```/i);
+  const snippet = (match ? match[1] : raw).trim();
+  const safe    = snippet.replace(/`/g, "\\`");
+
+  const opens  = (safe.match(/[({]/g) || []).length;
+  const closes = (safe.match(/[)}]/g) || []).length;
+  if (opens !== closes) {
+    return { ok: false, code: "", err: "Brace / paren mismatch – reply looks truncated." };
+  }
+  return { ok: true, code: safe };
+};
 
 export const Taskpane: React.FC = () => {
-  const [apiKey, setApiKey] = React.useState("");
-  const [prompt, setPrompt] = React.useState("");
-  const [files,  setFiles]  = React.useState<File[]>([]);
+  const [apiKey,  setApiKey]  = React.useState("");
+  const [prompt,  setPrompt]  = React.useState("");
+  const [images,  setImages]  = React.useState<File[]>([]);
+  const [output,  setOutput]  = React.useState("");
+  const [loading, setLoading] = React.useState(false);
 
-  const { loading, output, call, encodeImages } = useAnthropic();
+  /* helper – base-64 encode images */
+  const encodeImages = (files: File[]) =>
+    Promise.all(
+      files.map(
+        f =>
+          new Promise<string>((res, rej) => {
+            const r = new FileReader();
+            r.onerror = () => rej(r.error);
+            r.onload  = () => res(r.result as string);
+            r.readAsDataURL(f);
+          }),
+      ),
+    );
 
-  const run = async () => {
-    const images = await encodeImages(files);
-    await call({ apiKey, prompt, images });
+  /* main handler */
+  const callAnthropic = async () => {
+    setLoading(true);
+    setOutput("");
+
+    try {
+      const systemPrompt = `You are an assistant that writes Office.js code for Excel.
+Return ONLY executable JavaScript (no Markdown, no comments).
+
+:: STRICT RULES ::
+1.  When writing a 2-D array 'data', compute:
+      const rows = data.length;
+      const cols = data[0].length;
+    and assert every row.length === cols (throw if not).
+
+2.  Before assigning .values/.formulas:
+      const rng = sheet.getRangeByIndexes(r0, c0, rows, cols);
+      rng.values = data;
+    Never assign if array dims ≠ range dims.
+
+3.  ALWAYS wrap work in:
+      await Excel.run(async (context) => { … });
+4.  End with 'await context.sync();' and nothing after it.`;
+
+      const imageData = await encodeImages(images);
+
+      /* call local proxy → Anthropic */
+      const { data } = await axios.post("https://127.0.0.1:5050/anthropic", {
+        apiKey,
+        prompt,
+        systemPrompt,
+        images: imageData,
+      });
+
+      const raw = data?.content?.[0]?.text ?? "";
+      setOutput(raw);
+
+      const { ok, code, err } = extractExecutableCode(raw);
+      if (!ok) {
+        setOutput("❌ " + err);
+        return;
+      }
+
+      /* run code in Excel */
+      let fn: Function;
+      try {
+        fn = new Function(
+          `"use strict";\nreturn (async (Excel) => {\n${code}\n})(arguments[0]);`,
+        );
+      } catch (syntaxErr: any) {
+        setOutput("❌ Syntax error: " + syntaxErr.message);
+        return;
+      }
+
+      try {
+        await fn(Excel as any);
+      } catch (runtimeErr: any) {
+        setOutput(
+          "❌ Runtime error: " + runtimeErr.message +
+          "\n\nLast script:\n" + code +
+          "\n\nExcel stack:\n" + (runtimeErr.stack || ""),
+        );
+      }
+    } catch (err: any) {
+      setOutput("❌ " + (err.response?.data?.error || err.message));
+    } finally {
+      setLoading(false);
+    }
   };
 
+  /* JSX */
   return (
     <div style={styles.container}>
       <div style={styles.card}>
@@ -42,33 +138,28 @@ export const Taskpane: React.FC = () => {
               type="file"
               accept="image/*"
               multiple
-              onChange={e => setFiles(Array.from(e.target.files ?? []))}
+              onChange={e => setImages(Array.from(e.target.files ?? []))}
               hidden
             />
           </label>
-          {files.length > 0 && (
+          {images.length > 0 && (
             <span style={styles.uploadInfo}>
-              {files.length} image{files.length > 1 ? "s" : ""}
+              {images.length} image{images.length > 1 ? "s" : ""}
             </span>
           )}
         </Field>
 
-        {files.length > 0 && (
+        {images.length > 0 && (
           <div style={styles.thumbStrip}>
-            {files.map((f, i) => (
-              <img
-                key={i}
-                src={URL.createObjectURL(f)}
-                alt={f.name}
-                style={styles.thumb}
-              />
+            {images.map((f, i) => (
+              <img key={i} src={URL.createObjectURL(f)} alt={f.name} style={styles.thumb} />
             ))}
           </div>
         )}
 
         <button
           style={styles.runBtn}
-          onClick={run}
+          onClick={callAnthropic}
           disabled={loading || !apiKey.trim() || !prompt.trim()}
         >
           {loading ? "Running…" : "Run"}
@@ -82,12 +173,12 @@ export const Taskpane: React.FC = () => {
   );
 };
 
-/* ── presentational helpers ──────────────────────────── */
+/* ── tiny sub-components ─────────────────────────── */
 
 const Header = () => (
   <div style={styles.header}>
     <span style={styles.logo}>🧠</span>
-    <h1 style={styles.title}>SheetSage</h1>
+    <h1 style={styles.title}>speakSage</h1>
   </div>
 );
 
@@ -113,7 +204,7 @@ const Field: React.FC<{
   </div>
 );
 
-/* ── inline style object (same values as the CSS) ────────────────────────── */
+/* ── inline styles object ─────────────────────────── */
 
 const styles: { [k: string]: React.CSSProperties } = {
   container: { padding: "1rem", background: "#f3f2f1", height: "100%" },
@@ -193,5 +284,4 @@ const styles: { [k: string]: React.CSSProperties } = {
     borderRadius: 6,
     cursor: "pointer",
   },
-  runBtnHover: { background: "#218838" }, // optional hover handling
 };
