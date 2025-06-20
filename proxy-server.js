@@ -48,6 +48,8 @@ function extractExecutableCode(raw) {
       ],
     };
 
+      console.log("──────── Claude Prompt Sent────────");
+
     try {
       const r = await axios.post(
         "https://api.anthropic.com/v1/messages",
@@ -62,6 +64,8 @@ function extractExecutableCode(raw) {
         },
       );
 
+      console.log("──────── Claude Response Received────────");
+
       /* show what will be run */
       const raw = r.data?.content?.[0]?.text ?? "";
       const { ok, code, err } = extractExecutableCode(raw);
@@ -70,7 +74,6 @@ function extractExecutableCode(raw) {
       } else {
         console.log(
           "──────── Sanitised code sent to Excel ────────\n" +
-            code +
             "\n──────────────────────────────────────────────",
         );
       }

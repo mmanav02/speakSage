@@ -1,20 +1,31 @@
 import * as React from "react";
 import axios from "axios";
 
-/* ── helper: strip ``` fences & check braces ───────────────── */
+/* ── helper: strip ``` fences & check braces ───────────────────────── */
 const extractExecutableCode = (
   raw: string,
 ): { ok: boolean; code: string; err?: string } => {
   const match   = raw.match(/```(?:typescript|javascript)?\s*([\s\S]*?)```/i);
   const snippet = (match ? match[1] : raw).trim();
   const safe    = snippet.replace(/`/g, "\\`");
-
-  const opens  = (safe.match(/[({]/g) || []).length;
-  const closes = (safe.match(/[)}]/g) || []).length;
-  if (opens !== closes) {
+  if ((safe.match(/[({]/g) || []).length !== (safe.match(/[)}]/g) || []).length) {
     return { ok: false, code: "", err: "Brace / paren mismatch – reply looks truncated." };
   }
   return { ok: true, code: safe };
+};
+
+/* ── helper: capture live sheet values + numberFormat ──────────────── */
+const captureSheetJSON = async () => {
+  return Excel.run(async (ctx) => {
+    const sheet = ctx.workbook.worksheets.getActiveWorksheet();
+    const rng   = sheet.getUsedRange();
+    rng.load(["values", "numberFormat"]);
+    await ctx.sync();
+    return JSON.stringify({
+      values:       rng.values,
+      numberFormat: rng.numberFormat,
+    });
+  });
 };
 
 export const Taskpane: React.FC = () => {
@@ -26,52 +37,53 @@ export const Taskpane: React.FC = () => {
 
   /* helper – base-64 encode images */
   const encodeImages = (files: File[]) =>
-    Promise.all(
-      files.map(
-        f =>
-          new Promise<string>((res, rej) => {
-            const r = new FileReader();
-            r.onerror = () => rej(r.error);
-            r.onload  = () => res(r.result as string);
-            r.readAsDataURL(f);
-          }),
-      ),
-    );
+    Promise.all(files.map(f => new Promise<string>((res, rej) => {
+      const r = new FileReader();
+      r.onerror = () => rej(r.error);
+      r.onload  = () => res(r.result as string);
+      r.readAsDataURL(f);
+    })));
 
-  /* main handler */
+  /* ── main handler ────────────────────────────────────────────────── */
   const callAnthropic = async () => {
     setLoading(true);
     setOutput("");
 
     try {
+      /* 1️⃣  snapshot sheet BEFORE we talk to Claude */
+      const sheetJSON = await captureSheetJSON();
+
+      /* 2️⃣ build system prompt that embeds that snapshot */
       const systemPrompt = `You are an assistant that writes Office.js code for Excel.
-Return ONLY executable JavaScript (no Markdown, no comments).
 
-:: STRICT RULES ::
-1.  When writing a 2-D array 'data', compute:
-      const rows = data.length;
-      const cols = data[0].length;
-    and assert every row.length === cols (throw if not).
+        Below is the CURRENT sheet state in JSON (two top-level keys: "values" and "numberFormat").
+        <<<SHEET_STATE>>>
+        ${sheetJSON}
+        <<<END>>>
 
-2.  Before assigning .values/.formulas:
-      const rng = sheet.getRangeByIndexes(r0, c0, rows, cols);
-      rng.values = data;
-    Never assign if array dims ≠ range dims.
+        • Preserve existing data unless explicitly told to overwrite.
+        • Match or extend current formatting (consult "numberFormat").
+        • Return ONLY executable JavaScript (no Markdown).
 
-3.  ALWAYS wrap work in:
-      await Excel.run(async (context) => { … });
-4.  End with 'await context.sync();' and nothing after it.`;
+        :: STRICT RULES ::
+        1. Compute rows/cols for every 2-D array, ensure rectangular.
+        2. Use getRangeByIndexes before assigning .values / .formulas.
+        3. Wrap all work in: await Excel.run(async (context) => { … });
+        4. End with 'await context.sync();' and nothing after it.`;
 
+      /* 3️⃣  encode images (if any) */
       const imageData = await encodeImages(images);
 
-      /* call local proxy → Anthropic */
+      /* 4️⃣  call local proxy → Claude */
       const { data } = await axios.post("https://127.0.0.1:5050/anthropic", {
         apiKey,
         prompt,
         systemPrompt,
         images: imageData,
+        sheet: sheetJSON,          // forwarded, useful for logging/debug
       });
 
+      /* 5️⃣  show Claude's raw reply & extract executable code */
       const raw = data?.content?.[0]?.text ?? "";
       setOutput(raw);
 
@@ -81,7 +93,7 @@ Return ONLY executable JavaScript (no Markdown, no comments).
         return;
       }
 
-      /* run code in Excel */
+      /* 6️⃣  run code inside Excel */
       let fn: Function;
       try {
         fn = new Function(
@@ -108,7 +120,7 @@ Return ONLY executable JavaScript (no Markdown, no comments).
     }
   };
 
-  /* JSX */
+  /* ── JSX UI (unchanged) ─────────────────────────────────────────── */
   return (
     <div style={styles.container}>
       <div style={styles.card}>
@@ -125,7 +137,7 @@ Return ONLY executable JavaScript (no Markdown, no comments).
         <Field label="Prompt">
           <textarea
             style={styles.textareaPrompt}
-            placeholder='e.g. "Format like the images"'
+            placeholder='e.g. "Align new table with existing styles"'
             value={prompt}
             onChange={e => setPrompt(e.target.value)}
           />
@@ -173,7 +185,7 @@ Return ONLY executable JavaScript (no Markdown, no comments).
   );
 };
 
-/* ── tiny sub-components ─────────────────────────── */
+/* ── tiny sub-components & inline styles (unchanged) ──────────────── */
 
 const Header = () => (
   <div style={styles.header}>
@@ -204,8 +216,6 @@ const Field: React.FC<{
   </div>
 );
 
-/* ── inline styles object ─────────────────────────── */
-
 const styles: { [k: string]: React.CSSProperties } = {
   container: { padding: "1rem", background: "#f3f2f1", height: "100%" },
   card: {
@@ -218,70 +228,35 @@ const styles: { [k: string]: React.CSSProperties } = {
   header: { display: "flex", alignItems: "center", marginBottom: 16 },
   logo: { fontSize: 24, marginRight: 8 },
   title: { margin: 0, fontSize: "1.5rem", color: "#0078d4" },
-
   section: { marginBottom: 16 },
   label: { fontWeight: 600, marginBottom: 4, display: "block" },
-
   input: {
-    width: "100%",
-    padding: 10,
-    fontSize: 14,
-    border: "1px solid #ccc",
-    borderRadius: 6,
-    boxSizing: "border-box",
-    resize: "vertical",
+    width: "100%", padding: 10, fontSize: 14, border: "1px solid #ccc",
+    borderRadius: 6, boxSizing: "border-box", resize: "vertical",
   },
   textareaPrompt: {
-    width: "100%",
-    minHeight: 120,
-    padding: 10,
-    fontSize: 14,
-    border: "1px solid #ccc",
-    borderRadius: 6,
-    boxSizing: "border-box",
+    width: "100%", minHeight: 120, padding: 10, fontSize: 14,
+    border: "1px solid #ccc", borderRadius: 6, boxSizing: "border-box",
     resize: "vertical",
   },
   textarea: {
-    width: "100%",
-    padding: 10,
-    fontSize: 14,
-    background: "#f9f9f9",
-    border: "1px solid #ccc",
-    borderRadius: 6,
-    boxSizing: "border-box",
+    width: "100%", padding: 10, fontSize: 14, background: "#f9f9f9",
+    border: "1px solid #ccc", borderRadius: 6, boxSizing: "border-box",
     resize: "vertical",
   },
-
   uploadBtn: {
-    padding: "10px 14px",
-    background: "#0078d4",
-    color: "#fff",
-    fontWeight: 600,
-    borderRadius: 6,
-    cursor: "pointer",
-    fontSize: 12,
-    whiteSpace: "nowrap",
+    padding: "10px 14px", background: "#0078d4", color: "#fff",
+    fontWeight: 600, borderRadius: 6, cursor: "pointer", fontSize: 12,
   },
   uploadInfo: { marginLeft: 8, fontSize: 12 },
-
   thumbStrip: { display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" },
   thumb: {
-    width: 48,
-    height: 48,
-    objectFit: "cover",
-    borderRadius: 4,
+    width: 48, height: 48, objectFit: "cover", borderRadius: 4,
     border: "1px solid #ccc",
   },
-
   runBtn: {
-    width: "100%",
-    padding: 10,
-    marginBottom: 16,
-    background: "#28a745",
-    color: "#fff",
-    fontWeight: 600,
-    border: "none",
-    borderRadius: 6,
+    width: "100%", padding: 10, marginBottom: 16, background: "#28a745",
+    color: "#fff", fontWeight: 600, border: "none", borderRadius: 6,
     cursor: "pointer",
   },
 };
